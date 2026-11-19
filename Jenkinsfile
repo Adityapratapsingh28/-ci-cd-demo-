@@ -32,10 +32,10 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig-demo', variable: 'KUBECONFIG')]) {
-                    sh 'kubectl set image deployment/ci-cd-demo ci-cd-demo=$DOCKERHUB_USER/$APP_NAME:$IMAGE_TAG --record || kubectl apply -f k8s/deployment.yaml'
-                    sh 'kubectl rollout status deployment/ci-cd-demo --timeout=120s'
-                }
+                // kubeconfig lives at /var/lib/jenkins/kube/config on the Jenkins host
+                // (kind cluster kubeconfig, copied from the K8s node)
+                sh 'kubectl --kubeconfig /var/lib/jenkins/kube/config set image deployment/ci-cd-demo ci-cd-demo=$DOCKERHUB_USER/$APP_NAME:$IMAGE_TAG || kubectl --kubeconfig /var/lib/jenkins/kube/config apply -f k8s/deployment.yaml'
+                sh 'kubectl --kubeconfig /var/lib/jenkins/kube/config rollout status deployment/ci-cd-demo --timeout=120s'
             }
         }
     }
