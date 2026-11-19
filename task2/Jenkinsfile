@@ -44,14 +44,12 @@ pipeline {
         stage('Smoke Test Green') {
             steps {
                 // check green actually serves the new page before switching any users to it
-                script {
-                    def greenPod = sh(
-                        script: 'kubectl --kubeconfig /var/lib/jenkins/kube/config get pods -l version=green -o jsonpath="{.items[0].metadata.name}"',
-                        returnStdout: true
-                    ).trim()
-                    sh 'kubectl --kubeconfig /var/lib/jenkins/kube/config exec $greenPod -- wget -qO- http://localhost | grep -i "GREEN" || exit 1'
-                    echo 'Green environment passed the smoke test'
-                }
+                sh '''
+                    GREEN_POD=$(kubectl --kubeconfig /var/lib/jenkins/kube/config get pods -l version=green -o jsonpath='{.items[0].metadata.name}')
+                    echo "smoke testing green pod: $GREEN_POD"
+                    kubectl --kubeconfig /var/lib/jenkins/kube/config exec "$GREEN_POD" -- wget -qO- http://localhost | grep -i "GREEN" || exit 1
+                    echo "Green environment passed the smoke test"
+                '''
             }
         }
 
