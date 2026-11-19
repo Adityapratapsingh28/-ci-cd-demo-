@@ -1,0 +1,32 @@
+# Blue deployment - the current production version
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bg-app-blue
+  labels:
+    app: bg-app
+    version: blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: bg-app
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: bg-app
+        version: blue
+    spec:
+      containers:
+      - name: bg-app
+        image: bella38/bg-demo:blue
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
