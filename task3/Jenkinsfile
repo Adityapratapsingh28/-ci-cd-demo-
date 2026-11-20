@@ -1,0 +1,82 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_USER = 'bella38'
+        KUBE = '--kubeconfig /var/lib/jenkins/kube/config'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Adityapratapsingh28/-ci-cd-demo-.git'
+            }
+        }
+
+        stage('Security: Secret Scan (Gitleaks)') {
+            steps {
+                // scans the whole repo for hardcoded passwords, api keys, tokens
+                sh '''
+                    curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz -C /tmp
+                    /tmp/gitleaks detect --source . --no-git --redact -v
+                '''
+            }
+        }
+
+        stage('Security: Container Scan (Trivy)') {
+            steps {
+                sh '''
+                    curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp v0.53.0
+                    /tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL --quiet bella38/hospital-app:latest
+                '''
+            }
+        }
+
+        stage('Build Image') {
+            steps {
+                sh 'docker build -t $DOCKERHUB_USER/hospital-app:$BUILD_NUMBER -t $DOCKERHUB_USER/hospital-app:latest ./task3/app'
+            }
+        }
+
+        stage('Security: Scan New Image (Trivy)') {
+            steps {
+                // scan the image we just built - block push if HIGH/CRITICAL CVEs found
+                sh '/tmp/trivy image --exit-code 1 --severity HIGH,CRITICAL --quiet $DOCKERHUB_USER/hospital-app:$BUILD_NUMBER'
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin'
+                    sh 'docker push $DOCKERHUB_USER/hospital-app:$BUILD_NUMBER'
+                    sh 'docker push $DOCKERHUB_USER/hospital-app:latest'
+                }
+            }
+        }
+
+        stage('Security: K8s Config Scan (Trivy config)') {
+            steps {
+                // checks k8s yaml for insecure settings (root user, no limits, etc)
+                sh '/tmp/trivy config --exit-code 1 --severity HIGH,CRITICAL --quiet ./task3/k8s'
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'kubectl $KUBE apply -f task3/k8s/deployment.yaml'
+                sh 'kubectl $KUBE set image deployment/hospital-app hospital-app=$DOCKERHUB_USER/hospital-app:$BUILD_NUMBER'
+                sh 'kubectl $KUBE rollout status deployment/hospital-app --timeout=120s'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '=== SECURITY CHECKS PASSED - APP DEPLOYED ==='
+        }
+        failure {
+            echo '=== DEPLOYMENT BLOCKED BY SECURITY GATE - FIX FINDINGS FIRST ==='
+        }
+    }
+}
